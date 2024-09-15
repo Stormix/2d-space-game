@@ -1,22 +1,15 @@
-import { BoxGeometry, Mesh, MeshBasicMaterial, Vector2 } from 'three';
-import { Entity } from '../../core/entity';
+import { Vector2 } from 'three';
+import { Ship } from './ship';
 
-export class Enemy implements Entity {
-  position = new Vector2();
-  rotation = 0;
-  scale = new Vector2(1, 1);
-  velocity = new Vector2();
-  mesh: Mesh;
+export class Enemy extends Ship {
   shooting = false;
   enemy = true;
 
-  constructor() {
-    const geometry = new BoxGeometry(50, 50);
-    const material = new MeshBasicMaterial({ color: 0xb94a44 });
-    this.mesh = new Mesh(geometry, material);
+  constructor(position: Vector2) {
+    super(position, 0x454545);
   }
 
   toString() {
-    return `Enemy: position=${JSON.stringify(this.position)}, velocity=${JSON.stringify(this.velocity)}, rotation=${this.rotation}, shooting=${this.shooting}`;
+    return `Enemy: position=${JSON.stringify(this.position)}, velocity=${JSON.stringify(this.velocity)}, rotation=${this.rotation}, shooting=${this.shooting}, health=${this.health}`;
   }
 }

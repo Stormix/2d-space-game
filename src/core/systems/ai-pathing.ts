@@ -1,18 +1,17 @@
 import { Vector2 } from 'three';
+import { ENEMY_SPEED } from '../../config';
 import { Engine } from '../engine';
 import { Component } from '../entity';
 import { System } from '../system';
 
-const ENEMY_SPEED = 0.5;
-
-export class EnemyMovementSystem extends System {
+export class AiPathingSystem extends System {
   lastPosition: Vector2 | null = null;
 
   constructor(engine: Engine) {
-    super(engine, [Component.Positionable, Component.Moving, Component.Rotatable]);
+    super(engine, [Component.Positionable, Component.Moving, Component.Rotatable, Component.Physics]);
   }
 
-  update(delta: number) {
+  update() {
     for (const entity of this.entities) {
       if (entity?.local) {
         // player
@@ -24,12 +23,18 @@ export class EnemyMovementSystem extends System {
         if (!this.lastPosition) {
           continue;
         }
+        const distance = entity.position.distanceTo(this.lastPosition);
+
+        if (distance < 500) {
+          entity.physics!.setLinearVelocity(new Vector2(0, 0));
+          continue;
+        }
 
         const velocity = new Vector2(this.lastPosition.x - entity.position.x, this.lastPosition.y - entity.position.y);
         velocity.normalize();
+        velocity.multiplyScalar(ENEMY_SPEED);
 
-        entity.velocity.x = velocity.x * ENEMY_SPEED;
-        entity.velocity.y = velocity.y * ENEMY_SPEED;
+        entity.physics!.applyForceToCenter(velocity, true);
       } else continue;
     }
   }

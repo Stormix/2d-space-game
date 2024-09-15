@@ -1,25 +1,28 @@
+import { BOUNDS } from '../../config';
 import { Engine } from '../engine';
 import { Component } from '../entity';
 import { System } from '../system';
 
 export class ProjectileCleanupSystem extends System {
   constructor(engine: Engine) {
-    super(engine, [Component.Projectile]);
+    super(engine, [Component.Projectile, Component.Expires]);
   }
 
-  update(delta: number) {
+  update() {
     for (const entity of this.entities) {
       // Remove the entity if it's out of bounds
-      const halfWidth = window.innerWidth / 2;
-      const halfHeight = window.innerHeight / 2;
-
       if (
-        entity.position.x > halfWidth ||
-        entity.position.x < -halfWidth ||
-        entity.position.y > halfHeight ||
-        entity.position.y < -halfHeight
+        entity.lifetime! <= 0 ||
+        entity.position.x > BOUNDS[1] ||
+        entity.position.x < BOUNDS[0] ||
+        entity.position.y > BOUNDS[1] ||
+        entity.position.y < BOUNDS[0]
       ) {
-        this.engine.removeEntity(entity);
+        this.engine.remove(entity);
+      }
+
+      if (entity.lifetime) {
+        entity.lifetime -= 1;
       }
     }
   }

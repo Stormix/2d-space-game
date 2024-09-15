@@ -1,19 +1,30 @@
+import { GameStates } from '@/types/state';
 import { World } from 'miniplex';
 import Stats from 'stats.js';
-import { OrthographicCamera, PerspectiveCamera, Scene, WebGLRenderer } from 'three';
+import { OrthographicCamera, PerspectiveCamera, Texture, WebGLRenderer } from 'three';
+import { Font } from 'three/examples/jsm/loaders/FontLoader.js';
+import { FIXED_TIMESTEP } from '../config';
 import { Entity } from './entity';
+import { EventManager } from './event-manager';
+import { EventQueue } from './events';
 import { Factory } from './factory';
+import { PhysicsEngine } from './physics';
+import { GameState } from './state';
+import { StateManager } from './state-manager';
 import { System } from './system';
-import { BulletSystem } from './systems/bullet';
-import { EnemyMovementSystem } from './systems/enemy-movement';
+import { AiPathingSystem } from './systems/ai-pathing';
+import { CameraSystem } from './systems/camera';
+import { CollisionSystem } from './systems/collision';
+import { HealthSystem } from './systems/health';
 import { InputSystem } from './systems/input';
-import { ObjectMovementSystem } from './systems/object-movement';
-import { PlayerMovementSystem } from './systems/player-movement';
+import { PlayerMovementSystem } from './systems/movement';
 import { PositionSystem } from './systems/position';
+import { ProjectileSystem } from './systems/projectile';
 import { ProjectileCleanupSystem } from './systems/projectile-cleanup';
 import { RenderSystem } from './systems/render';
 import { RotationSystem } from './systems/rotation';
 import { ShootingSystem } from './systems/shooting';
+import { GameWorldState } from './ui';
 
 export abstract class Engine {
   renderer: WebGLRenderer;
@@ -21,12 +32,19 @@ export abstract class Engine {
   camera: OrthographicCamera | PerspectiveCamera;
   world: World = new World<Entity>();
   systems: System[];
-  currentScene!: Scene;
   stats: Stats;
+  physics: PhysicsEngine = PhysicsEngine.instance;
+  queue: EventQueue;
+  eventManager: EventManager = new EventManager();
+  stateManager: StateManager = new StateManager();
+  textures: Map<string, Texture> = new Map();
+  fonts: Map<string, Font> = new Map();
+
+  uiCallback: (state: GameWorldState) => void = () => {};
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.renderer = new WebGLRenderer({ antialias: true, canvas });
+    this.renderer = new WebGLRenderer({ antialias: false, canvas });
     this.camera = new OrthographicCamera(
       window.innerWidth / -2,
       window.innerWidth / 2,
@@ -36,73 +54,94 @@ export abstract class Engine {
       1000
     );
     this.systems = [
-      new RenderSystem(this),
-      new ShootingSystem(this),
-      new RotationSystem(this),
-      new PositionSystem(this),
-      new InputSystem(this),
-      new BulletSystem(this),
-      new PlayerMovementSystem(this),
-      new ObjectMovementSystem(this),
-      new ProjectileCleanupSystem(this),
-      new EnemyMovementSystem(this)
-    ];
+      RenderSystem,
+      ShootingSystem,
+      RotationSystem,
+      PositionSystem,
+      InputSystem,
+      ProjectileSystem,
+      PlayerMovementSystem,
+      ProjectileCleanupSystem,
+      AiPathingSystem,
+      CameraSystem,
+      CollisionSystem,
+      HealthSystem
+    ].map((System) => new System(this));
 
     this.stats = new Stats();
+    this.queue = new EventQueue(this);
+
     document.body.appendChild(this.stats.dom);
   }
 
-  init(scene: Scene) {
+  init(state: GameState) {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
     this.renderer.setSize(window.innerWidth, window.innerHeight);
 
     this.camera.position.z = 5;
-    this.currentScene = scene;
+
+    this.stateManager.change(state);
   }
 
   update(delta: number) {
-    // Update game logic
+    this.stateManager.update(delta);
+    this.queue.update();
+    this.physics.update(delta);
     this.systems.forEach((system) => system.update(delta));
-    this.world.entities.forEach((entity) => console.log(entity.toString()));
-    this.updateGame(delta);
+
+    this.onUpdate({
+      state: this.stateManager.state?.name ?? GameStates.Loading,
+      entities: this.entities,
+      player: this.entities.find((entity) => entity.local) ?? null
+    });
+  }
+
+  onUpdate(state: GameWorldState) {
+    this.uiCallback(state);
   }
 
   render() {
-    this.renderer.render(this.currentScene, this.camera);
-    this.renderGame();
+    this.stateManager.render();
   }
 
-  abstract updateGame(delta: number): void;
-  abstract renderGame(): void;
-
-  addEntity(entity: Entity) {
+  add(entity: Entity) {
     this.world.add(entity);
-    this.currentScene.add(entity.mesh);
+    this.stateManager.addToScene(entity.mesh);
   }
 
-  removeEntity(entity: Entity) {
+  remove(entity: Entity) {
     this.world.remove(entity);
-    this.currentScene.remove(entity.mesh);
+    this.stateManager.removeFromScene(entity.mesh);
+
+    if (entity.physics) {
+      this.physics.world.destroyBody(entity.physics);
+    }
   }
 
-  createEntity<E extends Entity>(factory: Factory<E>, components: Partial<E> = {}): E {
+  create<E extends Entity>(factory: Factory<E>, components: Partial<E> = {}): E {
     const entity = factory.create(components);
-    this.addEntity(entity);
+    this.add(entity);
     return entity;
   }
 
   start() {
-    // requestAnimationFrame
     let lastTime = 0;
+    let lag = 0;
+
     const loop = (time: number) => {
       this.stats.begin();
       const delta = time - lastTime;
+
       lastTime = time;
+      lag += delta;
 
-      this.update(delta);
+      while (lag >= FIXED_TIMESTEP) {
+        this.update(FIXED_TIMESTEP);
+        lag -= FIXED_TIMESTEP;
+      }
+
       this.render();
-
       this.stats.end();
       requestAnimationFrame(loop);
     };
@@ -118,7 +157,15 @@ export abstract class Engine {
     return window.innerHeight;
   }
 
-  get entities() {
+  get entities(): Entity[] {
     return this.world.entities;
+  }
+
+  registerUiCallback(uiCallback: (state: GameWorldState) => void) {
+    this.uiCallback = uiCallback;
+  }
+
+  unregisterUiCallback() {
+    this.uiCallback = () => {};
   }
 }

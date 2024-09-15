@@ -21,6 +21,9 @@ export class InputSystem extends System {
     });
 
     document.addEventListener('mousedown', (event) => {
+      // Check if the mouse button occured on the canvas and not a UI element
+      if (event.target !== this.engine.canvas) return;
+
       this.handleMouseInput(event, ButtonState.PRESSED);
     });
 
